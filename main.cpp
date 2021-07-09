@@ -27,7 +27,7 @@ int main(){
 
 	// create stuff
 	trainMethod trainA = trainMethod({200, 50}, 100, 20, {255, 10, 150, 255}, gRenderer, windowHeight);
-	trainMethod trainB = trainMethod({400, 50}, 100, 20, {25, 150, 150, 255}, gRenderer, windowHeight);
+	fabrikMethod trainB = fabrikMethod({200, 50}, 100, 20, {25, 220, 15, 255}, gRenderer, windowHeight);
 
 	coords goal = {400, 400};
 	goalShape.x = 0;

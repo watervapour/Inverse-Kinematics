@@ -107,14 +107,21 @@ void ikLimb::draw(){
 class baseIKSystem{
 public:
 	baseIKSystem() = default;
+	baseIKSystem(SDL_Point, double, double, SDL_Colour, SDL_Renderer*, int);
 	virtual void calculate(coords);
-	virtual void draw();
+	void draw();
 protected:
 	coords baseCoords;
 	const int segmentCount = 3;
 	ikLimb segments[3];
 	
 };
+
+baseIKSystem::baseIKSystem(SDL_Point _baseCoords, double segmentLength, 
+	double segmentWidth, SDL_Colour _systemColour, SDL_Renderer* _renderer,
+	int _windowHeight){
+		printf("custom constructor for basIKSystem\n");
+}
 
 void baseIKSystem::draw(){
 	for(int N = 0; N < segmentCount; N++){
@@ -131,8 +138,15 @@ void baseIKSystem::calculate(coords){
 	Currently, these only handle segments that can roate around the Z axis (in and
 	out of the screen).
 
-	With a system of N segments, any numbering will dicate the base/root element
-	as segment 0, with the end affecter/tip segment being labeled N-1.
+	With a system of N points, any numbering will dicate the base/root element as
+	segment 1, with the end affecter/tip point being labeled N. In the case that 
+	a reference to a specifiv 'segment', or the arm/line between points, the
+	number used will be that of the lower numbered joint. For example, the segment
+	between point 1 and 2 will be segment 1.
+	
+	As arrays are zero indexed, point N will have the position N-1, and point 1
+	will be array[0]. The numbering beginning from one is a convention found in
+	research papers on the material.
 	
 	For the time being, each system will use a fixed array for the segments,
 	as a future goal, perhaps vectors, or other dynamic storage classes may be
@@ -148,15 +162,15 @@ void baseIKSystem::calculate(coords){
 	The method treats each limb as a seperate object. Beginning at the 
 	tip/end affector, each limb follows a recursive process. 
 
-	The end joint turns to point at the 'goal', then, when relevant, moves to that
+	The end segment turns to aim at the 'goal', then, when relevant, moves to that
 	spot (this will detach it from the actual system). The next joint; 'end-1' or
-	N-2 will follow the same process, only its goal is the tail/base of the tip 
+	N-1 will follow the same process, only its goal is the tail/base of the tip 
 	joint.
 	
 	This will propogate along each segment until all joints have aimed at and
 	moved to the joint further on its length. Finally, the whole system is moved
-	so the base of segment 0 (the root of the whole system) is placed at the
-	systems origin.
+	so the base of segment 1 (point 1, the root of the whole system) is placed at
+	the systems origin.
 */
 class trainMethod : public baseIKSystem {
 public:
@@ -178,10 +192,10 @@ trainMethod::trainMethod(SDL_Point _baseCoords, double segmentLength,
 }
 
 void trainMethod::calculate(coords goal){
-	segments[2].self.pointAt(goal);
-	double dist = segments[2].self.getDist(goal);
-	dist -= segments[2].self.magnitude;
-	segments[2].self.move(dist);
+	segments[segmentCount-1].self.pointAt(goal);
+	double dist = segments[segmentCount-1].self.getDist(goal);
+	dist -= segments[segmentCount-1].self.magnitude;
+	segments[segmentCount-1].self.move(dist);
 
 	for(int N = segmentCount-2; N>=0; N--){	
 		segments[N].self.pointAt(segments[N+1].self.base);
@@ -201,3 +215,107 @@ void trainMethod::calculate(coords goal){
 	}
 }
 
+/* 
+	Fowards And Backward Reaching Inverse Kinematics is an algorithm that boasts
+	fast resolve times, and high accuracy. The also supports limits on how much
+	joints can turn, aswell as multiple end effectors.
+
+	The system begins by setting the position of point N to the same location as
+	the goal. The point will now be referred to as p'N. A ' is used to indicate
+	that a point has receive an update (in each iteration this would be increased
+	to '' and then ''', however, only 2 iterations of the algorithm needs to be
+	described).
+
+	Next, a line is drawn from p'N, to p(N-1). The point p(N-1) is then placed at
+	its new home of p'(N-1). This is found to be along the line just created, with
+	a distance of d(N-1). This length is the intended length of the segment
+	connecting points p(N-1) and pN.
+
+	The system then continues along the rest of the chain, now creating a line
+	between p'(N-1) and p(N-2). p'(N-2) is then also found as a distance along
+	this length. 
+
+	This concludes the 'backwards' portion of the algorithm. The process then 
+	begins again in a 'forwards' pass. First, point 1 (p'1 is the point affected,
+	as the backwards routing has updated its position once so far) has its 
+	location set to the intended base of the system, making it now p''1. A line is
+	made to the point p'2. p'2 is then moved along this, to its new home of p''2, 
+	at a distance of d1 from the origin point.
+
+	Once all the elements have been affected twice (once in the backwards
+	direction, and once in the forwards direction) the algorithm has completed one
+	full iteration. 
+*/
+
+class fabrikMethod : public baseIKSystem {
+public:
+	fabrikMethod(SDL_Point, double, double, SDL_Colour, SDL_Renderer*, int);
+	/*
+	fabrikMethod(SDL_Point _baseCoords, double segmentLength, 
+	double segmentWidth, SDL_Colour _systemColour, SDL_Renderer* _renderer,
+	int _windowHeight):baseIKSystem(_baseCoords, segmentLength, segmentWidth, _systemColour,
+		_renderer, _windowHeight){}
+	*/	
+	void calculate(coords) override;
+};
+
+fabrikMethod::fabrikMethod(SDL_Point _baseCoords, double segmentLength, 
+	double segmentWidth, SDL_Colour _systemColour, SDL_Renderer* _renderer,
+	int _windowHeight){
+	
+	baseCoords.x = _baseCoords.x;
+	baseCoords.y = _baseCoords.y;
+
+	for(int N = 0; N < segmentCount; N++){
+		segments[N] = ikLimb({baseCoords.x+N*segmentLength, baseCoords.y},
+			0, segmentLength, segmentWidth, _renderer, _systemColour);
+	}
+}
+void fabrikMethod::calculate(coords goal){
+	// this is used for calculating the intercepts/etc
+	vector2d line;
+
+
+	// Backwards pass
+	vector2d* currentLimb = &segments[segmentCount-1].self;
+	// p'N
+	line.base = goal; 
+	// find p(N-1)
+	line.pointAt(currentLimb->base);
+	// we now calculate where p'(N-1) is
+	line.magnitude = currentLimb->magnitude; 
+	//set our limb to use these new positions
+	currentLimb->base = line.getHead();
+	currentLimb->setHead(line.base);
+
+	for(int C = segmentCount -2;C >=0; C--){
+		currentLimb = &segments[C].self;
+		line.base = segments[C+1].self.base;
+		line.pointAt(currentLimb->base);
+		line.magnitude = currentLimb->magnitude; 
+		//set our limb to use these new positions
+		currentLimb->base = line.getHead();
+		currentLimb->setHead(line.base);
+	}
+	// forwards pass
+	currentLimb = &segments[0].self;
+	// p''1
+	line.base = baseCoords; 
+	// find p'2
+	line.pointAt(currentLimb->getHead());
+	// we now calculate where p'(N-1) is
+	line.magnitude = currentLimb->magnitude; 
+	//set our limb to use these new positions
+	currentLimb->base = line.base;
+	currentLimb->setHead(line.getHead());
+
+	for(int C = 1;C < segmentCount; C++){
+		currentLimb = &segments[C].self;
+		line.base = segments[C-1].self.getHead();
+		line.pointAt(currentLimb->getHead());
+		line.magnitude = currentLimb->magnitude; 
+		//set our limb to use these new positions
+		currentLimb->base = line.base;
+		currentLimb->setHead(line.getHead());
+	}
+}
