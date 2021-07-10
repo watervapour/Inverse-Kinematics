@@ -70,11 +70,11 @@ void ikLimb::draw(){
 	br.y = winHeight - (int)(self.base.y - limbDY);
 
 	coords head = self.getHead();
-	tl.x = (int)(head.x + limbDX);
-	tl.y = winHeight - (int)(head.y + limbDY);
+	tl.x = (int)(head.x + limbDX*0.7);
+	tl.y = winHeight - (int)(head.y + limbDY*0.7);
 
-	tr.x = (int)(head.x - limbDX);
-	tr.y = winHeight - (int)(head.y - limbDY);
+	tr.x = (int)(head.x - limbDX*0.7);
+	tr.y = winHeight - (int)(head.y - limbDY*0.7);
 	
 	/*
 	printf("\n ====== \n");
