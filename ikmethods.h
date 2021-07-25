@@ -76,15 +76,6 @@ void ikLimb::draw(){
 	tr.x = (int)(head.x - limbDX*0.7);
 	tr.y = winHeight - (int)(head.y - limbDY*0.7);
 	
-	/*
-	printf("\n ====== \n");
-	printf("deltas n such:\n angle = %f\nperpAngle = %f\n halfWidth = %f\n DX/DY = %f, %f",
-		self.angle, perpAngle, halfWidth, limbDX, limbDY);
-	printf("base xy = %f, %f\n bl = %d, %d\n br = %d, %d\n",
-		self.base.x, self.base.y, bl.x, bl.y, br.x, br.y);
-	printf("head xy = %f, %f\n tl = %d, %d\n tr = %d, %d\n",
-		head.x, head.y, tl.x, tl.y, tr.x, tr.y);
-	*/
 	
 	SDL_SetRenderDrawColor(renderer, limbColour.r, limbColour.g, limbColour.b, limbColour.a);
 	lines[0]=bl;lines[1]=tl;lines[2]=tr;lines[3]=br;lines[4]=bl;
@@ -99,6 +90,7 @@ void ikLimb::draw(){
 		- calculate(): receives a pair of coordinates, used to calculate angles
 			for the segments of the system
 		- draw(): calls the draw function for each limb segment
+		- ikInfo: a matrix providing values for text on screen
 	Private:
 		- baseCoords: coordinates for the base of the system (where it is mounted
 			to the outer world)
@@ -110,6 +102,8 @@ public:
 	baseIKSystem(SDL_Point, double, double, SDL_Colour, SDL_Renderer*, int);
 	virtual void calculate(coords);
 	void draw();
+
+	mat31 ikInfo;
 protected:
 	coords baseCoords;
 	const int segmentCount = 3;
@@ -196,12 +190,14 @@ void trainMethod::calculate(coords goal){
 	double dist = segments[segmentCount-1].self.getDist(goal);
 	dist -= segments[segmentCount-1].self.magnitude;
 	segments[segmentCount-1].self.move(dist);
+	ikInfo.values[segmentCount-1] = segments[segmentCount-1].self.angle;
 
 	for(int N = segmentCount-2; N>=0; N--){	
 		segments[N].self.pointAt(segments[N+1].self.base);
 		dist = segments[N].self.getDist(segments[N+1].self.base);
 		dist -= segments[N].self.magnitude;
 		segments[N].self.move(dist);
+		ikInfo.values[N] = segments[N].self.angle;
 	}
 
 	//shift system back to origin
@@ -213,6 +209,7 @@ void trainMethod::calculate(coords goal){
 		segments[N].self.base.x = segments[N].self.base.x - deltaX;
 		segments[N].self.base.y = segments[N].self.base.y - deltaY;
 	}
+
 }
 
 /* 
@@ -318,4 +315,89 @@ void fabrikMethod::calculate(coords goal){
 		currentLimb->base = line.base;
 		currentLimb->setHead(line.getHead());
 	}
+}
+
+/*
+	HTM method
+*/
+class htmMethod : public baseIKSystem {
+public:
+	htmMethod(SDL_Point, double, double, SDL_Colour, SDL_Renderer*, int);
+	void draw();
+	void calculate(double, double, double);
+private:
+	SDL_Renderer* renderer;
+	int windowHeight;
+};
+
+htmMethod::htmMethod(SDL_Point _baseCoords, double segmentLength, 
+	double segmentWidth, SDL_Colour _systemColour, SDL_Renderer* _renderer,
+	int _windowHeight){
+	
+	baseCoords.x = _baseCoords.x;
+	baseCoords.y = _baseCoords.y;
+
+	renderer = _renderer;
+	windowHeight = _windowHeight;
+
+	for(int N = 0; N < segmentCount; N++){
+		segments[N] = ikLimb({baseCoords.x+N*segmentLength, baseCoords.y},
+			0, segmentLength, segmentWidth, _renderer, _systemColour);
+	}
+}
+
+void htmMethod::calculate(double a1, double a2, double a3){
+	//01
+	double ca1 = cos(a1);
+	double sa1 = sin(a1);
+	double l1 = segments[0].self.magnitude;
+	mat33 R01 = {ca1, -1*sa1, 0, 
+				sa1, ca1, 0,
+				0, 0, 1};
+	mat31 D01 = {l1*ca1, l1*sa1, 0};	
+	mat44 H01;
+	HTMConcat(R01, D01, H01);
+
+	//12
+	double ca2 = cos(a2);
+	double sa2 = sin(a2);
+	double l2 = segments[1].self.magnitude;
+	mat33 R12 = {ca2, -1*sa2, 0, 
+				sa2, ca2, 0,
+				0, 0, 1};
+	mat31 D12 = {l2*ca2, l2*sa2, 0};	
+	mat44 H12;
+	HTMConcat(R12, D12, H12);
+
+	//23
+	double ca3 = cos(a3);
+	double sa3 = sin(a3);
+	double l3 = segments[2].self.magnitude;
+	mat33 R23 = {ca3, -1*sa3, 0, 
+				sa3, ca3, 0,
+				0, 0, 1};
+	mat31 D23 = {l3*ca3, l3*sa3, 0};	
+	mat44 H23;
+	HTMConcat(R23, D23, H23);
+
+	mat44 H02;
+	dot44(H01, H12, H02);	
+	mat44 H03;
+	dot44(H02, H23, H03);	
+	
+	segments[0].self.angle = a1;	
+	segments[1].self.base = segments[0].self.getHead();
+	segments[1].self.angle = a2 + a1;	
+	segments[2].self.base = segments[1].self.getHead();
+	segments[2].self.angle = a3 + a2 + a1;	
+}
+
+void htmMethod::draw(){
+	coords target = segments[2].self.getHead();
+	int htmX = (int)target.x;
+	int htmY = windowHeight-(int)target.y;
+	SDL_Rect htmDisplacement = {htmX-5, htmY-5, 10, 10};
+	SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+	SDL_RenderFillRect(renderer, &htmDisplacement);
+	baseIKSystem::draw();
 }

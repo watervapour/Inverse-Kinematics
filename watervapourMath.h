@@ -1,4 +1,5 @@
 #include <math.h>
+#include <cstdio>
 
 #define PI 3.14159265358
 
@@ -94,4 +95,73 @@ void vector2d::reflect(vector2d vectorB){
 //normalise
 void vector2d::normalise(){
 	magnitude = 1;
+}
+
+
+
+
+
+
+
+// =========== MATRICES ==========
+class matrix{
+
+};
+
+
+struct mat31{
+	double values[3];
+};
+
+struct mat33{
+	double values[3][3];
+};
+
+struct mat44{
+	double values[4][4];
+};
+
+void print44(mat44 matrix){
+	printf("%f, %f, %f, %f\n %f, %f, %f, %f\n %f, %f, %f, %f\n %f, %f, %f, %f\n",
+		matrix.values[0][0], matrix.values[0][1],matrix.values[0][2], matrix.values[0][3],
+		matrix.values[1][0], matrix.values[1][1],matrix.values[1][2], matrix.values[1][3],
+		matrix.values[2][0], matrix.values[2][1],matrix.values[2][2], matrix.values[2][3],
+		matrix.values[3][0], matrix.values[3][1],matrix.values[3][2], matrix.values[3][3]);
+}
+
+void HTMConcat(mat33 rotation, mat31 displacement, mat44& result){
+	for(int i=0;i<3;i++){
+		for(int j = 0; j < 3; j++){
+			result.values[i][j] = rotation.values[i][j];
+		}
+	}
+	for(int i = 0; i < 3; i++){
+		result.values[i][3] = displacement.values[i];
+	}
+	for(int j = 0; j < 4; j++){
+		result.values[3][j] = (j!=3)?0:1;
+	}
+}
+
+mat33 dot33(mat33 a, mat33 b, mat33& result){
+	for(int i = 0; i < 3; i++){
+		for(int j = 0; j < 3; j++){
+			double x = 0;
+			for(int o = 0; o < 3; o++){
+				x += a.values[i][o]*b.values[o][j];
+			}
+			result.values[i][j] = x;	
+		}
+	}
+}
+mat44 dot44(mat44 a, mat44 b, mat44& result){
+	for(int i = 0; i < 4; i++){
+		for(int j = 0; j < 4; j++){
+			double x = 0;
+			for(int o = 0; o < 4; o++){
+				x += a.values[i][o]*b.values[o][j];
+			}
+			result.values[i][j] = x;	
+		}
+	}
 }
