@@ -38,7 +38,6 @@ int main(){
 		return 1;
 	}
 
-	// Object creation
 
 	// goal related 
 	pendulum pendulumGoal = pendulum(200, 200, 70, 70, 0.25*PI, 0, 0xBB);
@@ -49,11 +48,12 @@ int main(){
 	goalShape.h = 6;
 
 	// IK method objects
-	trainMethod ikA = trainMethod({200, 50}, 100, 20, {255, 10, 150, 255}, gRenderer, windowHeight);
-	fabrikMethod ikB = fabrikMethod({200, 50}, 100, 20, {25, 220, 15, 255}, gRenderer, windowHeight);
+	trainMethod ikA = trainMethod({200, 50}, 75, 20, {255, 10, 150, 255}, gRenderer, windowHeight);
+	fabrikMethod ikB = fabrikMethod({200, 50}, 75, 20, {25, 220, 15, 255}, gRenderer, windowHeight);
+	ccdMethod ikC = ccdMethod({200, 50}, 75, 20, {255, 255, 0}, gRenderer, windowHeight);
 
 	// kinematic objects
-	htmMethod kA = htmMethod({200, 50}, 100, 20, {25, 25, 255}, gRenderer, windowHeight);
+	htmMethod kA = htmMethod({200, 50}, 75, 20, {25, 25, 255}, gRenderer, windowHeight);
 
 	double t;
 
@@ -101,11 +101,12 @@ int main(){
 		//printf("IKA: %f, %f, %f\n", ikA.ikInfo.values[0],ikA.ikInfo.values[1],ikA.ikInfo.values[2]);
 		ikB.calculate({goal.x, windowHeight-goal.y});
 		ikB.draw();	
+		ikC.calculate({goal.x, windowHeight-goal.y});
+		ikC.draw();	
 
 		t += 0.01;
-		kA.calculate(2*t, t, -t*0.7);
+		kA.calculate(2*t, t, -t*0.7, t+0.4, -t);
 		kA.draw();
-
 		SDL_RenderPresent(gRenderer);
 		SDL_Delay(10); // hacky timing
 	} // end while(running) loop

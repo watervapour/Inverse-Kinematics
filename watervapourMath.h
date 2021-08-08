@@ -23,7 +23,8 @@ public:
 	//math
 	vector2d add(vector2d);
 	vector2d sub(vector2d);
-	vector2d dot(vector2d);
+	double dot(vector2d);
+	double cross(vector2d);
 
 	// positional functions
 	void pointAt(coords);
@@ -63,6 +64,15 @@ void vector2d::setHead(coords location){
 //add, sub, dot
 vector2d vector2d::add(vector2d b){
 	setHead(b.getHead());
+}
+
+double vector2d::dot(vector2d v){
+	return magnitude * v.magnitude * cos(angle - v.angle);
+	//return magnitude * cos(angle) * v.magnitude * cos(v.angle) + magnitude * sin(angle) * v.magnitude * sin(v.angle);
+}
+
+double vector2d::cross(vector2d other){
+	return cos(angle)*sin(other.angle) - sin(angle)*cos(other.angle);
 }
 
 // positionals

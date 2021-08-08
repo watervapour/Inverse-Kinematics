@@ -103,18 +103,18 @@ public:
 	virtual void calculate(coords);
 	void draw();
 
-	mat31 ikInfo;
+	double ikInfo[5];
 protected:
 	coords baseCoords;
-	const int segmentCount = 3;
-	ikLimb segments[3];
-	
+	const int segmentCount = 5;
+	ikLimb segments[5];
+	double angleSum = 0;
+	double tempSegmentAngle = 0;
 };
 
 baseIKSystem::baseIKSystem(SDL_Point _baseCoords, double segmentLength, 
 	double segmentWidth, SDL_Colour _systemColour, SDL_Renderer* _renderer,
 	int _windowHeight){
-		printf("custom constructor for basIKSystem\n");
 }
 
 void baseIKSystem::draw(){
@@ -126,6 +126,7 @@ void baseIKSystem::draw(){
 void baseIKSystem::calculate(coords){
 	return;
 }
+
 // =============================================================
 /*
 	Below are the various alrogithm/methods of solving inverse kinematics.
@@ -178,7 +179,6 @@ trainMethod::trainMethod(SDL_Point _baseCoords, double segmentLength,
 	
 	baseCoords.x = _baseCoords.x;
 	baseCoords.y = _baseCoords.y;
-
 	for(int N = 0; N < segmentCount; N++){
 		segments[N] = ikLimb({baseCoords.x+N*segmentLength, baseCoords.y},
 			0, segmentLength, segmentWidth, _renderer, _systemColour);
@@ -190,16 +190,18 @@ void trainMethod::calculate(coords goal){
 	double dist = segments[segmentCount-1].self.getDist(goal);
 	dist -= segments[segmentCount-1].self.magnitude;
 	segments[segmentCount-1].self.move(dist);
-	ikInfo.values[segmentCount-1] = segments[segmentCount-1].self.angle;
+	ikInfo[segmentCount-1] = segments[segmentCount-1].self.angle;
+
 
 	for(int N = segmentCount-2; N>=0; N--){	
 		segments[N].self.pointAt(segments[N+1].self.base);
 		dist = segments[N].self.getDist(segments[N+1].self.base);
 		dist -= segments[N].self.magnitude;
 		segments[N].self.move(dist);
-		ikInfo.values[N] = segments[N].self.angle;
+		ikInfo[N] = segments[N].self.angle;
 	}
 
+	
 	//shift system back to origin
 	// rootSegCoords represents how far the system has shifted from its origin
 	coords rootSegCoords = segments[0].self.base;
@@ -209,7 +211,6 @@ void trainMethod::calculate(coords goal){
 		segments[N].self.base.x = segments[N].self.base.x - deltaX;
 		segments[N].self.base.y = segments[N].self.base.y - deltaY;
 	}
-
 }
 
 /* 
@@ -247,12 +248,6 @@ void trainMethod::calculate(coords goal){
 class fabrikMethod : public baseIKSystem {
 public:
 	fabrikMethod(SDL_Point, double, double, SDL_Colour, SDL_Renderer*, int);
-	/*
-	fabrikMethod(SDL_Point _baseCoords, double segmentLength, 
-	double segmentWidth, SDL_Colour _systemColour, SDL_Renderer* _renderer,
-	int _windowHeight):baseIKSystem(_baseCoords, segmentLength, segmentWidth, _systemColour,
-		_renderer, _windowHeight){}
-	*/	
 	void calculate(coords) override;
 };
 
@@ -318,13 +313,134 @@ void fabrikMethod::calculate(coords goal){
 }
 
 /*
-	HTM method
+	Cyclic Coordinate descent
+
+	CCD iterates once per segment, beginning at the 'tip'. At each step, an angle
+	and vector are calculated which describe how the segment is rotated.
+
+	The algorithm works with three points:
+		- pf the coordinates of the goal
+		- pe the position of the end effector
+		- pc the base / pivot point of the current segment of the iteration
+
+	Two vectors are created (pce and pcf), which point from pc to either pe or pf.
+	Taking a dot product, then dividing by magnitudes, then inverse cos-ing 
+	provides the angle between vectors. Whilst the angles could be simply
+	subtracted in this particular implementation, that would be less proper, and 
+	doesn't result in a full implementation (and also wouldnt scale well to 3D).
+	The result of this is stored in the variable 'theta'.
+
+	Next, a cross product is taken between the vectors. In this 2D case, the
+	result will simply point 'into' or 'out of' the screen, and describe
+	counter-clockwise and clockwise respectively. This is stored in 'd'
+	which stands for 'direction', and in 3D would be a vector. This can be
+	visualised as following the right-hand curl rule used with electro-magnetism.
+	Imagine the pce vector as between wrist and knuckles. Then with pcf as
+	wrist to finger tips. Your thumb then points in the direction of d.
+
+	Theta is then modified to.In this 2D case, scalar multiplication of theta and 
+	d is sufficient. In 3D the d is used as an axis, around which theta radians
+	of rotation occurs.	The pce vector is then rotated by an amount of theta. 
+	
+	The whole process will then begin from joint C-1. pc and pe are
+	recalculated. Then the vectors and all steps follow on. The algorithm has
+	finished an iteration once all segments have rotated once. As rotation of
+	each joint will bring previous rotations out of their desired spot,
+	multiple passes will be required to reach a steady-state.
+	
+*/
+class ccdMethod : public baseIKSystem {
+public:
+	ccdMethod(SDL_Point, double, double, SDL_Colour, SDL_Renderer*, int);
+	void calculate(coords) override;
+};
+
+ccdMethod::ccdMethod(SDL_Point _baseCoords, double segmentLength, 
+	double segmentWidth, SDL_Colour _systemColour, SDL_Renderer* _renderer,
+	int _windowHeight){
+	
+	baseCoords.x = _baseCoords.x;
+	baseCoords.y = _baseCoords.y;
+
+	for(int N = 0; N < segmentCount; N++){
+		segments[N] = ikLimb({baseCoords.x+N*segmentLength, baseCoords.y},
+			0, segmentLength, segmentWidth, _renderer, _systemColour);
+	}
+}
+void ccdMethod::calculate(coords goal){
+	coords pe;
+	coords pf = goal;
+	vector2d pce;
+	vector2d pcf;
+
+	// iterate over each segment
+	for(int N = segmentCount -1 ; N >= 0; N--){
+		// fetch coordinates of points, then assemble vectors
+		coords pc = segments[N].self.base;
+		pe = segments[4].self.getHead();
+		pce.base = pc;
+		pce.setHead(pe);
+		pcf.base = pc;
+		pcf.setHead(pf);
+		
+		// calculate theta and d
+		double dotResult = pce.dot(pcf);
+		double theta = acos(dotResult/(pce.magnitude * pcf.magnitude));
+		double d = pce.cross(pcf);	
+		// normalise d to 1 or -1
+		// if -1 < d < 1 then each turn will be less than the amount required
+		// this can be a desirable effect, as the arm will move smoother and
+		// slower
+		d = (d>0)?1:-1;
+		// make theta follow CW/CCW direction based on d
+		theta *= d;
+
+		// make sure the angle propogates through, as rotation of each joint
+		// is relative to previous.
+		// position is also updated
+		for(int i = N; i < segmentCount; i++){
+			// apply theta to affected limb
+			segments[i].self.angle += theta;
+
+			// segments[0] is the base, and does not have a parent joint to 
+			// be moved by
+		 	if(i != 0)
+				// set rotation coordinate as appropriate
+		 		segments[i].self.base = segments[i-1].self.getHead();
+		}
+	}
+}
+
+/*
+	Homogeneous Transform Matrix method
+
+	HTMs are matrices which can describe the rotation and location of a point
+	in a robotic arm system. See video/playlist in README for full details.
+
+	Each section (01, 12, 23, etc.) decribes the relation between reference
+	frame {0 and 1} or {1 and 2} or {2 and 3}. The '01' section will be
+	highlighted.
+
+	The variables ca1 and sa1 are variables used repeatedly, and refer to the
+	X and Y components of rotation being undergone. l1 is the length of the
+	segment. R01 is a rotation matrix, due to the 2D nature of the 
+	implementations, these rotation matrices are simply Z rotation matrices.
+	D01 describes the displacement, basically where frame 1 is after frame 0
+	is rotated. An HTM is the created by a special concatenation process.
+
+	As all the HTMs are the same size, they can simply be dot multiplied 
+	together. As a final step in the calculate function, the segments are
+	updated, so that they can be drawn properly.
+
+	The draw function reads from the final 05 HTM, and draws a square at
+	the location specified, this is to visually show how the position is
+	the same as where the armature rests.
 */
 class htmMethod : public baseIKSystem {
 public:
 	htmMethod(SDL_Point, double, double, SDL_Colour, SDL_Renderer*, int);
 	void draw();
-	void calculate(double, double, double);
+	void calculate(double, double, double, double, double);
 private:
 	SDL_Renderer* renderer;
 	int windowHeight;
@@ -346,7 +462,7 @@ htmMethod::htmMethod(SDL_Point _baseCoords, double segmentLength,
 	}
 }
 
-void htmMethod::calculate(double a1, double a2, double a3){
+void htmMethod::calculate(double a1, double a2, double a3, double a4, double a5){
 	//01
 	double ca1 = cos(a1);
 	double sa1 = sin(a1);
@@ -380,20 +496,53 @@ void htmMethod::calculate(double a1, double a2, double a3){
 	mat44 H23;
 	HTMConcat(R23, D23, H23);
 
+	//34
+	double ca4 = cos(a4);
+	double sa4 = sin(a4);
+	double l4 = segments[3].self.magnitude;
+	mat33 R34 = {ca4, -1*sa4, 0, 
+				sa4, ca4, 0,
+				0, 0, 1};
+	mat31 D34 = {l4*ca4, l4*sa4, 0};	
+	mat44 H34;
+	HTMConcat(R34, D34, H34);
+
+
+	//45
+	double ca5 = cos(a5);
+	double sa5 = sin(a5);
+	double l5 = segments[4].self.magnitude;
+	mat33 R45 = {ca5, -1*sa5, 0, 
+				sa5, ca5, 0,
+				0, 0, 1};
+	mat31 D45 = {l5*ca5, l5*sa5, 0};	
+	mat44 H45;
+	HTMConcat(R45, D45, H45);
+
+	// Create the HTM using dot products
 	mat44 H02;
 	dot44(H01, H12, H02);	
-	mat44 H03;
-	dot44(H02, H23, H03);	
+	mat44 H24;
+	dot44(H23, H34, H24);
+	mat44 H04;
+	dot44(H02, H24, H04);	
+	mat44 H05;
+	dot44(H04, H45, H05);
 	
+	// apply the inputted angles to the system
 	segments[0].self.angle = a1;	
 	segments[1].self.base = segments[0].self.getHead();
 	segments[1].self.angle = a2 + a1;	
 	segments[2].self.base = segments[1].self.getHead();
 	segments[2].self.angle = a3 + a2 + a1;	
+	segments[3].self.base = segments[2].self.getHead();
+	segments[3].self.angle = a4 + a3 + a2 + a1;	
+	segments[4].self.base = segments[3].self.getHead();
+	segments[4].self.angle = a5 + a4 + a3 + a2 + a1;	
 }
 
 void htmMethod::draw(){
-	coords target = segments[2].self.getHead();
+	coords target = segments[4].self.getHead();
 	int htmX = (int)target.x;
 	int htmY = windowHeight-(int)target.y;
 	SDL_Rect htmDisplacement = {htmX-5, htmY-5, 10, 10};
