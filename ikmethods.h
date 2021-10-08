@@ -129,7 +129,7 @@ void baseIKSystem::calculate(coords){
 
 // =============================================================
 /*
-	Below are the various alrogithm/methods of solving inverse kinematics.
+	Below are the various algorithm/methods of solving inverse kinematics.
 	Currently, these only handle segments that can roate around the Z axis (in and
 	out of the screen).
 
@@ -151,7 +151,7 @@ void baseIKSystem::calculate(coords){
 
 
 /* 
-	This algorithm for invsere kinematics is described in a video from
+	This algorithm for inverse kinematics is described in a video from
 	the youtube channel 'the coding train'.
 
 	The method treats each limb as a seperate object. Beginning at the 
